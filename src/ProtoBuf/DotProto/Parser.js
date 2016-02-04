@@ -18,6 +18,12 @@ var Parser = function(source) {
      * @expose
      */
     this.tn = new Tokenizer(source);
+
+    /**
+     * Whether parsing proto3 or not.
+     * @type {boolean}
+     */
+    this.proto3 = false;
 };
 
 /**
@@ -44,7 +50,8 @@ ParserPrototype.parse = function() {
         // "syntax": undefined
     };
     var token,
-        head = true;
+        head = true,
+        weak;
     try {
         while (token = this.tn.next()) {
             switch (token) {
@@ -61,17 +68,19 @@ ParserPrototype.parse = function() {
                     if (!head)
                         throw Error("unexpected 'import'");
                     token = this.tn.peek();
-                    if (token === "public") // ignored
+                    if (token === "public" || (weak = token === "weak")) // token ignored
                         this.tn.next();
                     token = this._readString();
                     this.tn.skip(";");
-                    topLevel["imports"].push(token);
+                    if (!weak) // import ignored
+                        topLevel["imports"].push(token);
                     break;
                 case 'syntax':
                     if (!head)
                         throw Error("unexpected 'syntax'");
                     this.tn.skip("=");
-                    topLevel["syntax"] = this._readString();
+                    if ((topLevel["syntax"] = this._readString()) === "proto3")
+                        this.proto3 = true;
                     this.tn.skip(";");
                     break;
                 case 'message':
@@ -389,6 +398,7 @@ ParserPrototype._parseMessage = function(parent, fld) {
         "enums": [],
         "messages": [],
         "options": {},
+        "services": [],
         "oneofs": {}
         // "extensions": undefined
     };
@@ -415,18 +425,38 @@ ParserPrototype._parseMessage = function(parent, fld) {
             this._parseMessage(msg);
         else if (token === "option")
             this._parseOption(msg);
+        else if (token === "service")
+            this._parseService(msg);
         else if (token === "extensions")
-            this._parseExtensions(msg);
+            if (msg.hasOwnProperty("extensions")) {
+                msg["extensions"] = msg["extensions"].concat(this._parseExtensionRanges())
+            } else {
+                msg["extensions"] = this._parseExtensionRanges();
+            }
+        else if (token === "reserved")
+            this._parseIgnored(); // TODO
         else if (token === "extend")
             this._parseExtend(msg);
-        else if (Lang.TYPEREF.test(token))
+        else if (Lang.TYPEREF.test(token)) {
+            if (!this.proto3)
+                throw Error("illegal field rule: "+token);
             this._parseMessageField(msg, "optional", token);
-        else
+        } else
             throw Error("illegal message token: "+token);
     }
     this.tn.omit(";");
     parent["messages"].push(msg);
     return msg;
+};
+
+/**
+ * Parses an ignored statement.
+ * @private
+ */
+ParserPrototype._parseIgnored = function() {
+    while (this.tn.peek() !== ';')
+        this.tn.next();
+    this.tn.skip(";");
 };
 
 /**
@@ -591,29 +621,43 @@ ParserPrototype._parseEnum = function(msg) {
 };
 
 /**
- * Parses an extensions statement.
- * @param {!Object} msg Message object
+ * Parses extension / reserved ranges.
+ * @returns {!Array.<!Array.<number>>}
  * @private
  */
-ParserPrototype._parseExtensions = function(msg) {
-    var token = this.tn.next(),
+ParserPrototype._parseExtensionRanges = function() {
+    var ranges = [];
+    var token,
+        range,
+        value;
+    do {
         range = [];
-    if (token === "min")
-        range.push(ProtoBuf.ID_MIN);
-    else if (token === "max")
-        range.push(ProtoBuf.ID_MAX);
-    else
-        range.push(mkNumber(token));
-    this.tn.skip("to");
-    token = this.tn.next();
-    if (token === "min")
-        range.push(ProtoBuf.ID_MIN);
-    else if (token === "max")
-        range.push(ProtoBuf.ID_MAX);
-    else
-        range.push(mkNumber(token));
+        while (true) {
+            token = this.tn.next();
+            switch (token) {
+                case "min":
+                    value = ProtoBuf.ID_MIN;
+                    break;
+                case "max":
+                    value = ProtoBuf.ID_MAX;
+                    break;
+                default:
+                    value = mkNumber(token);
+                    break;
+            }
+            range.push(value);
+            if (range.length === 2)
+                break;
+            if (this.tn.peek() !== "to") {
+                range.push(value);
+                break;
+            }
+            this.tn.next();
+        }
+        ranges.push(range);
+    } while (this.tn.omit(","));
     this.tn.skip(";");
-    msg["extensions"] = range;
+    return ranges;
 };
 
 /**
@@ -633,9 +677,11 @@ ParserPrototype._parseExtend = function(parent) {
     while ((token = this.tn.next()) !== '}') {
         if (Lang.RULE.test(token))
             this._parseMessageField(ext, token);
-        else if (Lang.TYPEREF.test(token))
+        else if (Lang.TYPEREF.test(token)) {
+            if (!this.proto3)
+                throw Error("illegal field rule: "+token);
             this._parseMessageField(ext, "optional", token);
-        else
+        } else
             throw Error("illegal extend token: "+token);
     }
     this.tn.omit(";");

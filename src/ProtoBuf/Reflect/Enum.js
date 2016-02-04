@@ -34,8 +34,8 @@ var Enum = function(builder, parent, name, options, syntax) {
  */
 Enum.getName = function(enm, value) {
     var keys = Object.keys(enm);
-    for (var i=0; i<keys.length; ++i)
-        if (enm[key] === value)
+    for (var i=0, key; i<keys.length; ++i)
+        if (enm[key = keys[i]] === value)
             return key;
     return null;
 };
@@ -48,10 +48,13 @@ var EnumPrototype = Enum.prototype = Object.create(Namespace.prototype);
 
 /**
  * Builds this enum and returns the runtime counterpart.
- * @return {Object<string,*>}
+ * @param {boolean} rebuild Whether to rebuild or not, defaults to false
+ * @returns {!Object.<string,number>}
  * @expose
  */
-EnumPrototype.build = function() {
+EnumPrototype.build = function(rebuild) {
+    if (this.object && !rebuild)
+        return this.object;
     var enm = new ProtoBuf.Builder.Enum(),
         values = this.getChildren(Enum.Value);
     for (var i=0, k=values.length; i<k; ++i)

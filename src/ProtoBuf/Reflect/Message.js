@@ -20,10 +20,10 @@ var Message = function(builder, parent, name, options, isGroup, syntax) {
 
     /**
      * Extensions range.
-     * @type {!Array.<number>}
+     * @type {!Array.<number>|undefined}
      * @expose
      */
-    this.extensions = [ProtoBuf.ID_MIN, ProtoBuf.ID_MAX];
+    this.extensions = undefined;
 
     /**
      * Runtime message class.
@@ -131,7 +131,7 @@ MessagePrototype.encode = function(message, buffer, noVerify) {
             if (fieldMissing === null)
                 fieldMissing = field;
         } else
-            field.encode(noVerify ? val : field.verifyValue(val), buffer);
+            field.encode(noVerify ? val : field.verifyValue(val), buffer, message);
     }
     if (fieldMissing !== null) {
         var err = Error("Missing at least one required field for "+this.toString(true)+": "+fieldMissing);
@@ -155,7 +155,7 @@ MessagePrototype.calculate = function(message) {
         if (field.required && val === null)
            throw Error("Missing at least one required field for "+this.toString(true)+": "+field);
         else
-            n += field.calculate(val);
+            n += field.calculate(val, message);
     }
     return n;
 };
@@ -204,7 +204,7 @@ function skipTillGroupEnd(expectedId, buf) {
 /**
  * Decodes an encoded message and returns the decoded message.
  * @param {ByteBuffer} buffer ByteBuffer to decode from
- * @param {number=} length Message length. Defaults to decode all the available data.
+ * @param {number=} length Message length. Defaults to decode all remaining data.
  * @param {number=} expectedGroupEndId Expected GROUPEND id if this is a legacy group
  * @return {ProtoBuf.Builder.Message} Decoded message
  * @throws {Error} If the message cannot be decoded
@@ -255,10 +255,11 @@ MessagePrototype.decode = function(buffer, length, expectedGroupEndId) {
             msg[field.name].set(keyval[0], keyval[1]);
         } else {
             msg[field.name] = field.decode(wireType, buffer);
-            if (field.oneof) {
-                if (this[field.oneof.name] !== null)
-                    this[this[field.oneof.name]] = null;
-                msg[field.oneof.name] = field.name;
+            if (field.oneof) { // Field is part of an OneOf (not a virtual OneOf field)
+                var currentField = msg[field.oneof.name]; // Virtual field references currently set field
+                if (currentField !== null && currentField !== field.name)
+                    msg[currentField] = null; // Clear currently set field
+                msg[field.oneof.name] = field.name; // Point virtual field at this field
             }
         }
     }
@@ -266,13 +267,16 @@ MessagePrototype.decode = function(buffer, length, expectedGroupEndId) {
     // Check if all required fields are present and set default values for optional fields that are not
     for (var i=0, k=this._fields.length; i<k; ++i) {
         field = this._fields[i];
-        if (msg[field.name] === null)
-            if (field.required) {
-                var err = Error("Missing at least one required field for "+this.toString(true)+": "+field.name);
+        if (msg[field.name] === null) {
+            if (this.syntax === "proto3") { // Proto3 sets default values by specification
+                msg[field.name] = field.defaultValue;
+            } else if (field.required) {
+                var err = Error("Missing at least one required field for " + this.toString(true) + ": " + field.name);
                 err["decoded"] = msg; // Still expose what we got
                 throw(err);
             } else if (ProtoBuf.populateDefaults && field.defaultValue !== null)
                 msg[field.name] = field.defaultValue;
+        }
     }
     return msg;
 };

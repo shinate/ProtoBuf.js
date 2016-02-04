@@ -20,7 +20,7 @@
  */
 (function(global) {
 
-    var FILE = "ProtoBuf.min.js";
+    var FILE = "protobuf.js";
     var BROWSER = !!global.window;
     var StdOutFixture = require('fixture-stdout');
     var fixture = new StdOutFixture();
@@ -914,6 +914,19 @@
             test.done();
         },
 
+        "weakImports": function(test) {
+            try {
+                var builder = ProtoBuf.loadProtoFile(__dirname+"/imports-weak.proto");
+                var root = builder.build();
+            } catch (e) {
+                test.ok(e.message.indexOf("unresolvable type reference") >= 0);
+                test.done();
+                return;
+            }
+            var e = new Error("Weak import was imported.");
+            fail(e);
+        },
+
         "importExtensions": function(test) {
             var x = "package x; \
             message Test { \
@@ -1046,82 +1059,51 @@
         "extend": function(test) {
             try {
                 var ast = new ProtoBuf.DotProto.Parser(fs.readFileSync(__dirname+"/extend.proto")).parse();
-                test.deepEqual(ast,  {
-                    "package": null,
-                    "messages": [
-                        {
-                            "ref": "google.protobuf.MessageOptions",
-                            "fields": [
-                                {
-                                    "rule": "optional",
-                                    "options": {},
-                                    "type": "int32",
-                                    "name": "foo",
-                                    "id": 1001
-                                }
-                            ]
-                        },
-                        {
-                            "name": "Foo",
-                            "fields": [],
-                            "enums": [],
-                            "messages": [],
-                            "options": {},
-                            "extensions": [
-                                2,
-                                536870911
-                            ],
-                            "oneofs": []
-                        },
-                        {
-                            "ref": "Foo",
-                            "fields":[
-                                {
-                                    "rule": "optional",
-                                    "options": {},
-                                    "type": "string",
-                                    "name": "bar",
-                                    "id": 2
-                                }
-                            ]
-                        },
-                        {
-                            "name": "Bar",
-                            "fields": [],
-                            "enums": [],
-                            "messages": [
-                                {
-                                    "name": "Foo",
-                                    "fields": [],
-                                    "enums": [],
-                                    "messages": [],
-                                    "options": {},
-                                    "oneofs": []
-                                },
-                                {
-                                    "ref": ".Foo",
-                                    "fields": [
-                                        {
-                                            "rule": "optional",
-                                            "options": {},
-                                            "type": "Foo",
-                                            "name": "foo",
-                                            "id": 3
-                                        }
-                                    ]
-                                }
-                            ],
-                            "options": {},
-                            "oneofs": []
-                        }
-                    ],
-                    "enums": [],
-                    "imports": [
-                        "google/protobuf/descriptor.proto"
-                    ],
-                    "options": {},
-                    "services": []
-                });
+                test.deepEqual(ast, { package: null,
+                    messages:
+                        [ { ref: 'google.protobuf.MessageOptions',
+                            fields:
+                                [ { rule: 'optional',
+                                    type: 'int32',
+                                    name: 'foo',
+                                    options: {},
+                                    id: 1001 } ] },
+                            { name: 'Foo',
+                                fields: [],
+                                enums: [],
+                                messages: [],
+                                options: {},
+                                services: [],
+                                oneofs: {},
+                                extensions: [ [ 2, 536870911 ] ] },
+                            { ref: 'Foo',
+                                fields:
+                                    [ { rule: 'optional',
+                                        type: 'string',
+                                        name: 'bar',
+                                        options: {},
+                                        id: 2 } ] },
+                            { name: 'Bar',
+                                fields: [],
+                                enums: [],
+                                messages:
+                                    [ { name: 'Foo',
+                                        fields: [],
+                                        enums: [],
+                                        messages: [],
+                                        options: {},
+                                        services: [],
+                                        oneofs: {} },
+                                        { ref: '.Foo',
+                                            fields: [ { rule: 'optional', type: 'Foo', name: 'foo', options: {}, id: 3 } ] } ],
+                                options: {},
+                                services: [],
+                                oneofs: {} } ],
+                    enums: [],
+                    imports: [ 'google/protobuf/descriptor.proto' ],
+                    options: {},
+                    services: [] }
+                );
 
                 var builder = ProtoBuf.loadProtoFile(__dirname+"/extend.proto");
                 var TFoo = builder.lookup(".Foo"),
@@ -1133,8 +1115,8 @@
                 test.strictEqual(fields[0].id, 2);
                 test.strictEqual(fields[1].name, ".Bar.foo");
                 test.strictEqual(fields[1].id, 3);
-                test.deepEqual(TFoo.extensions, [2, ProtoBuf.ID_MAX]); // Defined
-                test.deepEqual(TBar.extensions, [ProtoBuf.ID_MIN, ProtoBuf.ID_MAX]); // Undefined
+                test.deepEqual(TFoo.extensions, [[2, ProtoBuf.ID_MAX]]); // explicitly defined
+                test.strictEqual(TBar.extensions, undefined); // none defined
                 test.deepEqual(TBar.getChild("foo"), { builder: builder, parent: TBar, name: "foo", field: TFoo.getChild('.Bar.foo') });
                 test.strictEqual(TBar.getChildren(ProtoBuf.Reflect.Message.Field).length, 0);
                 var root = builder.build();
@@ -1272,7 +1254,8 @@
         },
 
         // Properly ignore "syntax" and "extensions" keywords
-        "gtfs-realtime": function(test) {
+        // The corresponding .proto file has been removed upon request
+        /* "gtfs-realtime": function(test) {
             try {
                 test.doesNotThrow(function() {
                     ProtoBuf.loadProtoFile(__dirname+"/gtfs-realtime.proto");
@@ -1281,7 +1264,7 @@
                 fail(e);
             }
             test.done();
-        },
+        }, */
 
         "delimited": function(test) {
             try {
@@ -1684,6 +1667,20 @@
             test.done();
         },
 
+        /* "mismatchedType": function(test) {
+            try {
+                var proto  = "message Test1 { optional string foo = 1; }";
+                    proto += "message Test2 { optional int32 foo = 1; }";
+                var builder = ProtoBuf.loadProto(proto, "tests/mistmatchedType.proto");
+                var root = builder.build();
+                var test1 = new root.Test1({ foo: 'bar' });
+                var test2 = root.Test2.decode(test1.encode());
+            } catch (e) {
+                fail(e);
+            }
+            test.done();
+        }, */
+
         "builderOptions": function(test) {
             try {
                 var proto = "message Foo { optional uint32 foo_bar = 1; }";
@@ -1804,6 +1801,7 @@
                 "  repeated bytes rpt_bytes = 14;\n" +
                 "  repeated Test rpt_msg = 15;\n" +
                 "  repeated Enum rpt_enum = 16;\n" +
+                "  oneof oneof_type { bool oneof_bool = 17; };\n" +
                 "}\n" +
                 "enum Enum { Default = 0; A = 1; B = 2; }\n";
             var builder = ProtoBuf.newBuilder();
@@ -1820,6 +1818,8 @@
             test.ok(testMsg.field_bytes instanceof ByteBuffer);
             test.strictEqual(testMsg.field_bytes.remaining(), 0);
             test.strictEqual(testMsg.rpt_int32.length, 0);
+            test.strictEqual(testMsg.oneof_type, null);
+            test.strictEqual(testMsg.oneof_bool, false);
 
             // No fields should go on the wire, even though they're set
             var encoded = testMsg.encode();
@@ -1837,6 +1837,17 @@
             encoded = testMsg.encode();
             testMsg = Test.decode(encoded);
             test.strictEqual(testMsg.field_enum, 42);
+
+            // Explicitly set fields that are part of an oneof should
+            // be encoded even if set to their default value
+            testMsg = new Test();
+            testMsg.set("oneof_bool", false);
+            test.strictEqual(testMsg.oneof_type, "oneof_bool");
+            encoded = testMsg.encode().compact();
+            test.strictEqual(encoded.toString("debug"), "<88 01 00>"); // 17|varint (0term) + varint 0
+            var decoded = Test.decode(encoded);
+            test.strictEqual(decoded.oneof_type, "oneof_bool");
+            test.strictEqual(decoded.oneof_bool, false);
 
             test.done();
         },
@@ -2046,6 +2057,7 @@
 
         "proto3Json": function(test) {
             var proto =
+                "syntax = \"proto3\";\n" +
                 "message Test {\n" +
                 "  int32 optional_int32 = 1;\n" +
                 "  int64 optional_int64 = 2;\n" +

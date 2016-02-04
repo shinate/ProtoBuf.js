@@ -15,23 +15,23 @@
  */
 
 /**
- * @license ProtoBuf.js (c) 2013 Daniel Wirtz <dcode@dcode.io>
+ * @license protobuf.js (c) 2013 Daniel Wirtz <dcode@dcode.io>
  * Released under the Apache License, Version 2.0
- * see: https://github.com/dcodeIO/ProtoBuf.js for details
+ * see: https://github.com/dcodeIO/protobuf.js for details
  */
 (function(global, factory) {
 
     /* AMD */ if (typeof define === 'function' && define["amd"])
-        define(["ByteBuffer"], factory);
+        define(["bytebuffer"], factory);
     /* CommonJS */ else if (typeof require === "function" && typeof module === "object" && module && module["exports"])
-        module["exports"] = factory(require("bytebuffer"), require);
+        module["exports"] = factory(require("bytebuffer"), true);
     /* Global */ else
         (global["dcodeIO"] = global["dcodeIO"] || {})["ProtoBuf"] = factory(global["dcodeIO"]["ByteBuffer"]);
 
-})(this, function(ByteBuffer, nodeRequire) {
+})(this, function(ByteBuffer, isCommonJS) {
     "use strict";
 
-    //? include("ProtoBuf.js");
+    //? include("protobuf.js");
 
     return ProtoBuf;
 });

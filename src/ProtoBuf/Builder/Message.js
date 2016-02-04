@@ -124,13 +124,14 @@ MessagePrototype.set = function(keyOrObj, value, noAssert) {
         this[field.name] = (value = field.verifyValue(value)); // May throw
     } else
         this[keyOrObj] = value;
-    if (field && field.oneof) {
+    if (field && field.oneof) { // Field is part of an OneOf (not a virtual OneOf field)
+        var currentField = this[field.oneof.name]; // Virtual field references currently set field
         if (value !== null) {
-            if (this[field.oneof.name] !== null)
-                this[this[field.oneof.name]] = null; // Unset the previous (field name is the oneof field's value)
-            this[field.oneof.name] = field.name;
-        } else if (field.oneof.name === keyOrObj)
-            this[field.oneof.name] = null;
+            if (currentField !== null && currentField !== field.name)
+                this[currentField] = null; // Clear currently set field
+            this[field.oneof.name] = field.name; // Point virtual field at this field
+        } else if (/* value === null && */currentField === keyOrObj)
+            this[field.oneof.name] = null; // Clear virtual field (current field explicitly cleared)
     }
     return this;
 };
@@ -339,18 +340,19 @@ MessagePrototype.calculate = function() {
  * @name ProtoBuf.Builder.Message#encodeDelimited
  * @function
  * @param {(!ByteBuffer|boolean)=} buffer ByteBuffer to encode to. Will create a new one and flip it if omitted.
+ * @param {boolean=} noVerify Whether to not verify field values, defaults to `false`
  * @return {!ByteBuffer} Encoded message as a ByteBuffer
  * @throws {Error} If the message cannot be encoded or if required fields are missing. The later still
  *  returns the encoded ByteBuffer in the `encoded` property on the error.
  * @expose
  */
-MessagePrototype.encodeDelimited = function(buffer) {
+MessagePrototype.encodeDelimited = function(buffer, noVerify) {
     var isNew = false;
     if (!buffer)
         buffer = new ByteBuffer(),
         isNew = true;
     var enc = new ByteBuffer().LE();
-    T.encode(this, enc).flip();
+    T.encode(this, enc, noVerify).flip();
     buffer.writeVarint32(enc.remaining());
     buffer.append(enc);
     return isNew ? buffer.flip() : buffer;
@@ -477,61 +479,54 @@ MessagePrototype.toHex = MessagePrototype.encodeHex;
  * @param {*} obj Object to clone
  * @param {boolean} binaryAsBase64 Whether to include binary data as base64 strings or as a buffer otherwise
  * @param {boolean} longsAsStrings Whether to encode longs as strings
- * @param {{name: string, wireType: number}} fieldType The field type, if
- * appropriate
- * @param {ProtoBuf.Reflect.T} resolvedType The resolved field type, if appropriate
+ * @param {!ProtoBuf.Reflect.T=} resolvedType The resolved field type if a field
  * @returns {*} Cloned object
  * @inner
  */
-function cloneRaw(obj, binaryAsBase64, longsAsStrings, fieldType, resolvedType) {
-    var clone = undefined;
+function cloneRaw(obj, binaryAsBase64, longsAsStrings, resolvedType) {
     if (obj === null || typeof obj !== 'object') {
-        if (fieldType == ProtoBuf.TYPES["enum"]) {
-            var values = resolvedType.getChildren(ProtoBuf.Reflect.Enum.Value);
-            for (var i = 0; i < values.length; i++) {
-                if (values[i]['id'] === obj) {
-                    obj = values[i]['name'];
-                    break;
-                }
-            }
+        // Convert enum values to their respective names
+        if (resolvedType && resolvedType instanceof ProtoBuf.Reflect.Enum) {
+            var name = ProtoBuf.Reflect.Enum.getName(resolvedType.object, obj);
+            if (name !== null)
+                return name;
         }
-        clone = obj;
-    } else if (ByteBuffer.isByteBuffer(obj)) {
-        if (binaryAsBase64) {
-            clone = obj.toBase64();
-        } else {
-            clone = obj.toBuffer();
-        }
-    } else if (Array.isArray(obj)) {
-        var src = obj;
-        clone = [];
-        for (var idx = 0; idx < src.length; idx++)
-            clone.push(cloneRaw(src[idx], binaryAsBase64, longsAsStrings, fieldType, resolvedType));
-    } else if (obj instanceof ProtoBuf.Map) {
-        var it = obj.entries();
-        clone = {};
-        for (var e = it.next(); !e.done; e = it.next())
-            clone[obj.keyElem.valueToString(e.value[0])] = cloneRaw(e.value[1], binaryAsBase64, longsAsStrings, obj.valueElem.type, obj.valueElem.resolvedType);
-    } else if (obj instanceof ProtoBuf.Long) {
-        if (longsAsStrings)
-            // int64s are encoded as strings
-            clone = obj.toString();
-        else
-            clone = new ProtoBuf.Long(obj);
-    } else { // is a non-null object
-        clone = {};
-        var type = obj.$type;
-        var field = undefined;
-        for (var i in obj) {
-            if (obj.hasOwnProperty(i)) {
-                var value = obj[i];
-                if (type) {
-                    field = type.getChild(i);
-                }
-                clone[i] = cloneRaw(value, binaryAsBase64, longsAsStrings, field.type, field.resolvedType);
-            }
-        }
+        // Pass-through string, number, boolean, null...
+        return obj;
     }
+    // Convert ByteBuffers to raw buffer or strings
+    if (ByteBuffer.isByteBuffer(obj))
+        return binaryAsBase64 ? obj.toBase64() : obj.toBuffer();
+    // Convert Longs to proper objects or strings
+    if (ProtoBuf.Long.isLong(obj))
+        return longsAsStrings ? obj.toString() : ProtoBuf.Long.fromValue(obj);
+    var clone;
+    // Clone arrays
+    if (Array.isArray(obj)) {
+        clone = [];
+        obj.forEach(function(v, k) {
+            clone[k] = cloneRaw(v, binaryAsBase64, longsAsStrings, resolvedType);
+        });
+        return clone;
+    }
+    clone = {};
+    // Convert maps to objects
+    if (obj instanceof ProtoBuf.Map) {
+        var it = obj.entries();
+        for (var e = it.next(); !e.done; e = it.next())
+            clone[obj.keyElem.valueToString(e.value[0])] = cloneRaw(e.value[1], binaryAsBase64, longsAsStrings, obj.valueElem.resolvedType);
+        return clone;
+    }
+    // Everything else is a non-null object
+    var type = obj.$type,
+        field = undefined;
+    for (var i in obj)
+        if (obj.hasOwnProperty(i)) {
+            if (type && (field = type.getChild(i)))
+                clone[i] = cloneRaw(obj[i], binaryAsBase64, longsAsStrings, field.resolvedType);
+            else
+                clone[i] = cloneRaw(obj[i], binaryAsBase64, longsAsStrings);
+        }
     return clone;
 }
 
@@ -543,7 +538,7 @@ function cloneRaw(obj, binaryAsBase64, longsAsStrings, fieldType, resolvedType) 
  * @expose
  */
 MessagePrototype.toRaw = function(binaryAsBase64, longsAsStrings) {
-    return cloneRaw(this, !!binaryAsBase64, !!longsAsStrings, ProtoBuf.TYPES["message"], this.$type);
+    return cloneRaw(this, !!binaryAsBase64, !!longsAsStrings, this.$type);
 };
 
 /**
@@ -556,7 +551,6 @@ MessagePrototype.encodeJSON = function() {
         cloneRaw(this,
              /* binary-as-base64 */ true,
              /* longs-as-strings */ true,
-             ProtoBuf.TYPES["message"],
              this.$type
         )
     );
@@ -567,6 +561,7 @@ MessagePrototype.encodeJSON = function() {
  * @name ProtoBuf.Builder.Message.decode
  * @function
  * @param {!ByteBuffer|!ArrayBuffer|!Buffer|string} buffer Buffer to decode from
+ * @param {(number|string)=} length Message length. Defaults to decode all the remainig data.
  * @param {string=} enc Encoding if buffer is a string: hex, utf8 (not recommended), defaults to base64
  * @return {!ProtoBuf.Builder.Message} Decoded message
  * @throws {Error} If the message cannot be decoded or if required fields are missing. The later still
@@ -575,7 +570,10 @@ MessagePrototype.encodeJSON = function() {
  * @see ProtoBuf.Builder.Message.decode64
  * @see ProtoBuf.Builder.Message.decodeHex
  */
-Message.decode = function(buffer, enc) {
+Message.decode = function(buffer, length, enc) {
+    if (typeof length === 'string')
+        enc = length,
+        length = -1;
     if (typeof buffer === 'string')
         buffer = ByteBuffer.wrap(buffer, enc ? enc : "base64");
     buffer = ByteBuffer.isByteBuffer(buffer) ? buffer : ByteBuffer.wrap(buffer); // May throw

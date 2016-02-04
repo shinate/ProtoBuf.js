@@ -160,7 +160,7 @@ function buildMessage(msg) {
     msg.getChildren(ProtoBuf.Reflect.Message.OneOf).forEach(function(oneof) {
         oneofs[oneof.name] = buildMessageOneof(oneof);
     });
-    if (msg.extensions[0] !== ProtoBuf.ID_MIN || msg.extensions[1] !== ProtoBuf.ID_MAX)
+    if (msg.extensions)
         out["extensions"] = msg.extensions;
     if (Object.keys(oneofs).length === 0)
         delete out["oneofs"];
@@ -180,7 +180,8 @@ function buildMessageField(fld) {
         "keytype" : (typeof(fld.keyType) === 'string') ? fld.keyType : (fld.keyType !== null ? fld.keyType.name : undefined),
         "name"    : fld instanceof ProtoBuf.Reflect.Message.ExtensionField ? fld.name.substring(fld.name.lastIndexOf(".")+1): fld.name,
         "id"      : fld.id,
-        "options" : Object.keys(fld.options).length > 0 ? buildOptions(fld.options) : undefined
+        "options" : Object.keys(fld.options).length > 0 ? buildOptions(fld.options) : undefined,
+        "oneof"   : fld.oneof ? fld.oneof.name : undefined
     };
 }
 

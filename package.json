@@ -1,23 +1,23 @@
 {
   "name": "protobufjs",
-  "version": "4.1.0",
+  "version": "5.0.1",
   "description": "Protocol Buffers for JavaScript. Finally.",
   "author": "Daniel Wirtz <dcode@dcode.io>",
   "contributors": [
     "Frank Xu <yyfrankyy@gmail.com>"
   ],
-  "main": "dist/ProtoBuf.js",
+  "main": "./dist/protobuf.js",
   "bin": {
     "pbjs": "./bin/pbjs"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dcodeIO/ProtoBuf.js.git"
+    "url": "https://github.com/dcodeIO/protobuf.js.git"
   },
   "bugs": {
-    "url": "https://github.com/dcodeIO/ProtoBuf.js/issues"
+    "url": "https://github.com/dcodeIO/protobuf.js/issues"
   },
-  "homepage": "https://github.com/dcodeIO/ProtoBuf.js",
+  "homepage": "https://github.com/dcodeIO/protobuf.js",
   "keywords": [
     "net",
     "buffer",
@@ -29,7 +29,7 @@
   ],
   "dependencies": {
     "ascli": "~1",
-    "bytebuffer": "~4",
+    "bytebuffer": "~5",
     "glob": "^5.0.10",
     "yargs": "^3.10.0"
   },
@@ -44,6 +44,10 @@
   "engines": {
     "node": ">=0.8"
   },
+  "browser": {
+    "fs": false,
+    "path": false
+  },
   "scripts": {
     "prepublish": "npm test",
     "test": "node bin/pbjs tests/complex.proto --target=json > tests/complex.json && node node_modules/testjs/bin/testjs tests/suite.js",
@@ -51,11 +55,11 @@
     "build": "node scripts/build.js",
     "descriptor2json": "node bin/pbjs src/google/protobuf/descriptor.proto --target=json > src/google/protobuf/descriptor.json",
     "compile": "npm run-script compile-full && npm run-script compile-light",
-    "compile-full": "ccjs dist/ProtoBuf.js --create_source_map=dist/ProtoBuf.min.map --compilation_level=SIMPLE_OPTIMIZATIONS > dist/ProtoBuf.min.js",
-    "compile-light": "ccjs dist/ProtoBuf-light.js --create_source_map=dist/ProtoBuf-light.min.map --compilation_level=SIMPLE_OPTIMIZATIONS > dist/ProtoBuf-light.min.js",
+    "compile-full": "ccjs dist/protobuf.js --create_source_map=dist/protobuf.min.map --compilation_level=SIMPLE_OPTIMIZATIONS > dist/protobuf.min.js",
+    "compile-light": "ccjs dist/protobuf-light.js --create_source_map=dist/protobuf-light.min.map --compilation_level=SIMPLE_OPTIMIZATIONS > dist/protobuf-light.min.js",
     "compress": "npm run-script compress-full && npm run-script compress-light",
-    "compress-full": "gzip -c -9 dist/ProtoBuf.min.js > dist/ProtoBuf.min.js.gz",
-    "compress-light": "gzip -c -9 dist/ProtoBuf-light.min.js > dist/ProtoBuf-light.min.js.gz",
+    "compress-full": "gzip -c -9 dist/protobuf.min.js > dist/protobuf.min.js.gz",
+    "compress-light": "gzip -c -9 dist/protobuf-light.min.js > dist/protobuf-light.min.js.gz",
     "jsdoc": "node node_modules/jsdoc/jsdoc.js -c jsdoc.json"
   }
 }

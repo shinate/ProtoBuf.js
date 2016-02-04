@@ -68,15 +68,18 @@ for (var i=0; i<rpc.length; i++) {
                     if (!(err instanceof TypeError))
                         throw err;
                 }
-                if (!req || !(req instanceof method.resolvedRequestType.clazz)) {
-                    setTimeout(callback.bind(this, Error("Illegal request type provided to service method "+T.name+"#"+method.name)), 0);
-                    return;
-                }
+                if (req === null || typeof req !== 'object')
+                    throw Error("Illegal arguments");
+                if (!(req instanceof method.resolvedRequestType.clazz))
+                    req = new method.resolvedRequestType.clazz(req);
                 this.rpcImpl(method.fqn(), req, function(err, res) { // Assumes that this is properly async
                     if (err) {
                         callback(err);
                         return;
                     }
+                    // Coalesce to empty string when service response has empty content
+                    if (res === null)
+                        res = ''
                     try { res = method.resolvedResponseType.clazz.decode(res); } catch (notABuffer) {}
                     if (!res || !(res instanceof method.resolvedResponseType.clazz)) {
                         callback(Error("Illegal response type received in service method "+ T.name+"#"+method.name));
